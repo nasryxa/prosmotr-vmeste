@@ -1,0 +1,583 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Комната просмотра</title>
+  <style>
+    :root {
+      /* Для своего фона замени none на url("background.jpg") */
+      --background-image: none;
+      --darkening: 0.55;
+      --panel: #201e27f2;
+      --line: #ffffff24;
+      --muted: #c4becf;
+      --accent: #cebcf4;
+      color-scheme: dark;
+    }
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background-color: #36313f;
+      background-image: linear-gradient(rgb(0 0 0 / var(--darkening)),
+                         rgb(0 0 0 / var(--darkening))), var(--background-image);
+      background-size: cover;
+      background-position: center;
+      color: #f6f3fa;
+      font: 16px/1.5 system-ui, sans-serif;
+    }
+    main {
+      width: min(1180px, 94%);
+      margin: 5vh auto;
+      display: grid;
+      grid-template-columns: minmax(0, 2fr) minmax(270px, 1fr);
+      gap: 16px;
+      align-items: start;
+    }
+    .column { display: grid; gap: 16px; min-width: 0; }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      overflow: hidden;
+    }
+    #entry { width: min(420px, 94%); margin: 14vh auto; padding: 20px; }
+    h2 { margin: 0; font-size: 19px; }
+    form, .bar {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      padding: 14px;
+    }
+    .bar { justify-content: space-between; }
+    #entry form { padding: 14px 0 0; }
+    input, button { font: inherit; }
+    input[type=text] {
+      min-width: 100px;
+      flex: 1;
+      background: #17161c;
+      color: white;
+      padding: 9px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    button {
+      background: var(--accent);
+      color: #241d30;
+      border: 0;
+      border-radius: 8px;
+      padding: 8px 12px;
+      cursor: pointer;
+    }
+    button:disabled { opacity: .45; cursor: default; }
+    .secondary { background: transparent; color: var(--muted); border: 1px solid var(--line); }
+    #screen {
+      aspect-ratio: 16 / 9;
+      background: #100f13;
+      display: grid;
+      place-items: center;
+      color: var(--muted);
+    }
+    #screen iframe { width: 100%; height: 100%; border: 0; }
+    #title { margin: 14px 14px 0; overflow-wrap: anywhere; }
+    #seek { flex: 1; min-width: 90px; accent-color: var(--accent); }
+    ol { margin: 0; padding: 0 18px 12px 42px; }
+    li { padding: 5px 0; overflow-wrap: anywhere; }
+    #empty, .status { margin: 0; padding: 0 14px 12px; color: var(--muted); }
+    .status:empty { display: none; }
+    #messages {
+      height: clamp(180px, 45vh, 460px);
+      overflow-y: auto;
+      padding: 12px;
+      border-block: 1px solid var(--line);
+    }
+    .message { width: fit-content; max-width: 90%; margin-bottom: 12px; }
+    .mine { margin-left: auto; }
+    .message small { color: var(--muted); }
+    .message p {
+      margin: 3px 0 0;
+      padding: 8px 12px;
+      border-radius: 10px;
+      background: #35313c;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+    .mine p { background: #463950; }
+    @media (max-width: 760px) {
+      main { grid-template-columns: 1fr; margin: 16px auto; }
+    }
+  </style>
+</head>
+<body>
+  <section id="entry" class="panel">
+    <h2>Войти в комнату</h2>
+    <form id="login">
+      <input id="nick" type="text" maxlength="24" placeholder="Твой ник"
+             aria-label="Твой ник" autocomplete="nickname" required>
+      <button id="enter" disabled>Войти</button>
+    </form>
+    <p id="loginStatus" role="status">Подключаемся…</p>
+  </section>
+
+  <main id="room" hidden>
+    <div class="column">
+      <section class="panel" aria-label="Плеер">
+        <div id="screen">Видео ещё не выбрано</div>
+        <p id="title" hidden></p>
+
+        <div class="bar">
+          <button id="toggle" disabled>Пауза</button>
+          <input id="seek" type="range" min="0" max="1" value="0" step="1"
+                 aria-label="Перемотка для всех" disabled>
+          <span id="time">0:00</span>
+          <button id="next" disabled>Начать просмотр</button>
+        </div>
+
+        <div class="bar" id="unlockBar" hidden>
+          <button id="unlock">Включить видео на этом устройстве</button>
+        </div>
+        <p id="playerStatus" class="status" role="status"></p>
+      </section>
+
+      <section class="panel">
+        <div class="bar">
+          <h2>Очередь</h2>
+          <button id="clear" class="secondary" disabled>Очистить очередь</button>
+        </div>
+        <p id="empty">Добавь ссылку на YouTube в чат.</p>
+        <ol id="queue"></ol>
+      </section>
+    </div>
+
+    <section class="panel">
+      <div class="bar">
+        <h2>Чат</h2>
+        <button id="rename" class="secondary">Сменить ник</button>
+      </div>
+      <div id="messages" role="log" aria-label="Сообщения"></div>
+      <form id="chat">
+        <input id="text" type="text" maxlength="2000" autocomplete="off"
+               placeholder="Сообщение или ссылка" aria-label="Сообщение или ссылка" required>
+        <button id="send" aria-label="Отправить">↑</button>
+      </form>
+      <p id="status" class="status" role="status"></p>
+    </section>
+  </main>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/13.4.0/firebase-app.js";
+    import {
+      getAuth, signInAnonymously, updateProfile
+    } from "https://www.gstatic.com/firebasejs/13.4.0/firebase-auth.js";
+    import {
+      getDatabase, ref, push, update, remove, onValue, onChildAdded, serverTimestamp
+    } from "https://www.gstatic.com/firebasejs/13.4.0/firebase-database.js";
+
+    const app = initializeApp({
+      apiKey: "AIzaSyAPRr0nVipM0QXtbqK4IHlpldNHofjQVdw",
+      authDomain: "prosmotr-vmeste.firebaseapp.com",
+      projectId: "prosmotr-vmeste",
+      appId: "1:768215472973:web:05618adcdb9325870cb504",
+      databaseURL: "https://prosmotr-vmeste-default-rtdb.europe-west1.firebasedatabase.app"
+    });
+
+    const auth = getAuth(app);
+    const db = getDatabase(app);
+    const el = id => document.getElementById(id);
+
+    const url = new URL(location.href);
+    let roomId = url.searchParams.get("room");
+    if (!/^[a-f0-9]{32}$/.test(roomId || "")) {
+      roomId = crypto.randomUUID().replaceAll("-", "");
+      url.searchParams.set("room", roomId);
+      history.replaceState(null, "", url);
+    }
+
+    const base = "rooms/" + roomId;
+    const roomRef = ref(db, base);
+    const queueRef = ref(db, base + "/queue");
+    const chatRef = ref(db, base + "/messages");
+
+    let queue = [];
+    let state = null;
+    let clockOffset = 0;
+    let connected = false;
+    let writing = false;
+    let player = null;
+    let ready = false;
+    let loadedKey = null;
+    let dragging = false;
+    let blocked = false;
+
+    function report(error) {
+      el("status").textContent = error.message || String(error);
+    }
+
+    function targetPosition() {
+      if (!state) return 0;
+      const elapsed = (Date.now() + clockOffset - state.updatedAt) / 1000;
+      return state.position + (state.playing ? Math.max(0, elapsed) : 0);
+    }
+
+    function duration() {
+      return ready ? player.getDuration() || 0 : 0;
+    }
+
+    function renderControls() {
+      const busy = !connected || writing;
+      el("toggle").disabled = busy || !state;
+      el("toggle").textContent = state?.playing ? "Пауза" : "Продолжить";
+      el("next").disabled = busy || queue.length === 0;
+      el("next").textContent = state ? "Урезать бюджет" : "Начать тратить бюджет";
+      el("clear").disabled = busy || queue.length === 0;
+      el("title").hidden = !state;
+      el("title").textContent = state?.title || "";
+      el("seek").disabled = busy || !state || !duration();
+    }
+
+    // Один объект playback описывает состояние для всех участников.
+    // Смена видео и удаление его из очереди записываются вместе.
+    async function commitPlayback(video, position, playing, queueKey = null) {
+      if (writing || !connected || !video) return;
+      writing = true;
+      renderControls();
+
+      const changes = {
+        playback: {
+          key: video.key,
+          id: video.id,
+          title: video.title,
+          position: Math.max(0, position),
+          playing,
+          updatedAt: serverTimestamp(),
+          version: (state?.version || 0) + 1
+        }
+      };
+      if (queueKey) changes["queue/" + queueKey] = null;
+
+      try {
+        await update(roomRef, changes);
+        el("status").textContent = "";
+      } catch (error) {
+        el("status").textContent =
+          "Команда не сохранена. Проверь состояние комнаты. " + error.message;
+      } finally {
+        writing = false;
+        renderControls();
+      }
+    }
+
+    function nextVideo() {
+      const first = queue[0];
+      if (first) commitPlayback(first, 0, true, first.key);
+    }
+
+    function syncPlayer() {
+      if (!ready || !state) return;
+
+      const position = targetPosition();
+      if (loadedKey !== state.key) {
+        loadedKey = state.key;
+        blocked = false;
+        el("unlockBar").hidden = true;
+        el("playerStatus").textContent = "";
+        const options = { videoId: state.id, startSeconds: position };
+        if (state.playing) player.loadVideoById(options);
+        else player.cueVideoById(options);
+        return;
+      }
+
+      if (player.getVideoData()?.video_id !== state.id) return;
+      const mode = player.getPlayerState();
+      const length = duration();
+
+      // В конце ролика ждём событие ENDED и общую смену видео.
+      if (mode === YT.PlayerState.ENDED && state.playing &&
+          length && position >= length - 1) return;
+
+      if (Math.abs(player.getCurrentTime() - position) > 1.5) {
+        player.seekTo(position, true);
+      }
+
+      if (state.playing && !blocked &&
+          mode !== YT.PlayerState.PLAYING && mode !== YT.PlayerState.BUFFERING) {
+        player.playVideo();
+      } else if (!state.playing &&
+                 (mode === YT.PlayerState.PLAYING || mode === YT.PlayerState.BUFFERING)) {
+        player.pauseVideo();
+      }
+    }
+
+    let apiLoading = false;
+    function createPlayer() {
+      if (player || !state) return;
+      if (!window.YT?.Player) {
+        if (apiLoading) return;
+        apiLoading = true;
+        window.onYouTubeIframeAPIReady = createPlayer;
+        const script = document.createElement("script");
+        script.src = "https://www.youtube.com/iframe_api";
+        script.onerror = () => {
+          el("playerStatus").textContent = "Не удалось загрузить YouTube. Обнови страницу.";
+        };
+        document.head.append(script);
+        return;
+      }
+
+      const holder = document.createElement("div");
+      el("screen").replaceChildren(holder);
+      player = new YT.Player(holder, {
+        width: "100%",
+        height: "100%",
+        playerVars: { playsinline: 1, controls: 0, disablekb: 1, origin: location.origin },
+        events: {
+          onReady() {
+            ready = true;
+            syncPlayer();
+          },
+          onAutoplayBlocked() {
+            if (!state?.playing) return;
+            blocked = true;
+            el("unlockBar").hidden = false;
+          },
+          onStateChange(event) {
+            if (event.data === YT.PlayerState.PLAYING) {
+              blocked = false;
+              el("unlockBar").hidden = true;
+            }
+            if (event.data !== YT.PlayerState.ENDED || !state?.playing ||
+                !connected || writing || loadedKey !== state.key ||
+                player.getVideoData()?.video_id !== state.id) return;
+
+            const length = duration();
+            if (!length || targetPosition() < length - 2) return;
+
+            if (queue.length) nextVideo();
+            else commitPlayback(state, length, false);
+          },
+          onError() {
+            el("playerStatus").textContent =
+              "YouTube не смог открыть этот ролик. Можно перейти к следующему.";
+          }
+        }
+      });
+    }
+
+    el("next").onclick = nextVideo;
+    el("toggle").onclick = () => {
+      if (!state) return;
+      let position = targetPosition();
+      if (!state.playing && duration() && position >= duration() - 1) position = 0;
+      commitPlayback(state, position, !state.playing);
+    };
+
+    el("unlock").onclick = () => {
+      if (!ready || !state?.playing) return;
+      blocked = false;
+      player.seekTo(targetPosition(), true);
+      player.playVideo();
+    };
+
+    el("seek").oninput = () => { dragging = true; };
+    el("seek").onchange = () => {
+      dragging = false;
+      if (state) commitPlayback(state, Number(el("seek").value), state.playing);
+    };
+    el("seek").onblur = () => { dragging = false; };
+
+    setInterval(() => {
+      if (!state || !ready) return;
+      const length = duration();
+      const seconds = Math.floor(Math.min(targetPosition(), length || Infinity));
+      el("time").textContent =
+        Math.floor(seconds / 60) + ":" + String(seconds % 60).padStart(2, "0");
+      if (!dragging) {
+        el("seek").max = String(length || 1);
+        el("seek").value = String(seconds);
+      }
+      renderControls();
+      if (!document.hidden && !writing) syncPlayer();
+    }, 1500);
+
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) syncPlayer();
+    });
+
+    function videoId(raw) {
+      const link = new URL(/^https?:/i.test(raw) ? raw : "https://" + raw);
+      const host = link.hostname.replace(/^(www\.|m\.)/, "");
+      const [, first, second] = link.pathname.split("/");
+      let id = null;
+      if (host === "youtu.be") id = first;
+      if (host === "youtube.com") {
+        if (first === "watch") id = link.searchParams.get("v");
+        if (["shorts", "embed", "live"].includes(first)) id = second;
+      }
+      return /^[\w-]{11}$/.test(id || "") ? id : null;
+    }
+
+    async function videoInfo(id) {
+      let title = "Видео YouTube · " + id;
+      try {
+        const source = "https://www.youtube.com/watch?v=" + id;
+        const response = await fetch(
+          "https://www.youtube.com/oembed?format=json&url=" + encodeURIComponent(source),
+          { signal: AbortSignal.timeout(5000) }
+        );
+        if (response.ok) {
+          const data = await response.json();
+          if (data.title?.trim()) title = data.title.trim().slice(0, 300);
+        }
+      } catch {
+        // Запасное название позволяет добавить ссылку при недоступности oEmbed.
+      }
+      return { id, title };
+    }
+
+    el("chat").onsubmit = async event => {
+      event.preventDefault();
+      const text = el("text").value.trim();
+      const user = auth.currentUser;
+      if (!text || !user || el("send").disabled) return;
+      el("send").disabled = true;
+
+      try {
+        const ids = [];
+        const pattern = /(?:https?:\/\/|(?:www\.|m\.)?(?:youtube\.com|youtu\.be)\/)[^\s<>]+/gi;
+        for (const match of text.matchAll(pattern)) {
+          try {
+            const id = videoId(match[0].replace(/[.,!?)]+$/, ""));
+            if (id) ids.push(id);
+          } catch {
+            continue;
+          }
+        }
+
+        const changes = {};
+        changes["messages/" + push(chatRef).key] = {
+          uid: user.uid,
+          nickname: user.displayName,
+          text
+        };
+
+        const videos = await Promise.all(ids.map(videoInfo));
+        for (const video of videos) {
+          changes["queue/" + push(queueRef).key] = video;
+        }
+
+        await update(roomRef, changes);
+        if (el("text").value.trim() === text) el("text").value = "";
+        el("status").textContent = "";
+      } catch (error) {
+        report(error);
+      } finally {
+        el("send").disabled = false;
+      }
+    };
+
+    el("clear").onclick = async () => {
+      if (!queue.length || !confirm("Очистить очередь у всех участников?")) return;
+      try {
+        await remove(queueRef);
+      } catch (error) {
+        report(error);
+      }
+    };
+
+    el("rename").onclick = async () => {
+      const user = auth.currentUser;
+      const value = prompt("Твой новый ник", user.displayName);
+      if (value === null) return;
+      const name = value.trim();
+      if (!name || name.length > 24) {
+        el("status").textContent = "Введи ник длиной от 1 до 24 символов.";
+        return;
+      }
+      try {
+        await updateProfile(user, { displayName: name });
+        el("status").textContent = "Твой ник: " + name;
+      } catch (error) {
+        report(error);
+      }
+    };
+
+    function openRoom() {
+      el("entry").hidden = true;
+      el("room").hidden = false;
+
+      onValue(ref(db, ".info/serverTimeOffset"), snap => {
+        clockOffset = snap.val() || 0;
+      });
+
+      onValue(ref(db, ".info/connected"), snap => {
+        connected = snap.val() === true;
+        renderControls();
+      });
+
+      onChildAdded(chatRef, snap => {
+        const data = snap.val();
+        const message = document.createElement("div");
+        message.className = data.uid === auth.currentUser.uid ? "message mine" : "message";
+        const author = document.createElement("small");
+        author.textContent = data.nickname;
+        const bubble = document.createElement("p");
+        bubble.textContent = data.text;
+        message.append(author, bubble);
+        el("messages").append(message);
+        el("messages").scrollTop = el("messages").scrollHeight;
+      }, report);
+
+      onValue(queueRef, snap => {
+        queue = [];
+        snap.forEach(item => { queue.push({ ...item.val(), key: item.key }); });
+        el("queue").replaceChildren(...queue.map(video => {
+          const li = document.createElement("li");
+          li.textContent = video.title;
+          return li;
+        }));
+        el("empty").hidden = queue.length > 0;
+        renderControls();
+      }, report);
+
+      onValue(ref(db, base + "/playback"), snap => {
+        state = snap.val();
+        renderControls();
+        if (state) {
+          createPlayer();
+          syncPlayer();
+        }
+      }, report);
+    }
+
+    el("login").onsubmit = async event => {
+      event.preventDefault();
+      const name = el("nick").value.trim();
+      if (!name) return;
+      el("enter").disabled = true;
+      try {
+        const { user } = await signInAnonymously(auth);
+        await updateProfile(user, { displayName: name });
+        openRoom();
+      } catch (error) {
+        el("loginStatus").textContent = error.message;
+      } finally {
+        el("enter").disabled = false;
+      }
+    };
+
+    try {
+      await auth.authStateReady();
+      if (auth.currentUser?.displayName) openRoom();
+      else {
+        el("loginStatus").textContent = "";
+        el("enter").disabled = false;
+      }
+    } catch (error) {
+      el("loginStatus").textContent = error.message;
+    }
+  </script>
+</body>
+</html>
